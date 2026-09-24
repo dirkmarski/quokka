@@ -1,0 +1,27 @@
+{
+  "name": "quokka",
+  "version": "1.0.0",
+  "description": "A chat agent, written in TypeScript, that helps someone set up their email client. Built to work through agent mechanics end to end: tool use, conversation state, and evals against simulated users.",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dirkmarski/quokka.git"
+  },
+  "keywords": [],
+  "author": "Dirk Marski",
+  "license": "MIT",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/dirkmarski/quokka/issues"
+  },
+  "homepage": "https://github.com/dirkmarski/quokka#readme",
+  "devDependencies": {
+    "@types/node": "^24.13.6",
+    "typescript": "^7.0.2"
+  },
+  "private": true
+}
