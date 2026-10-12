@@ -1,0 +1,174 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+# Learn more about building a configuration: https://promptfoo.dev/docs/configuration/guide
+
+description: "Email Agent Evals"
+
+defaultTest:
+  options:
+    disableVarExpansion: true
+    provider: ollama:chat:qwen2.5:7b-instruct
+  assert:
+  - type: javascript
+    value: file://grader.ts:rawTextResponse
+
+evaluateOptions:
+  repeat: 10
+
+prompts:
+  - "{{ turns }}"
+  
+providers:
+  - "provider.ts"
+
+tests:
+- vars:
+    turns:
+    - how do I set up my email?
+    - my email domain is gmail.com
+  assert:
+  - type: javascript
+    value: file://grader.ts:yesNo
+    config:
+      claim: The response asks for details of the email address or domain name.
+    transform: context.metadata.replies[0]
+  - type: llm-rubric
+    value: ensure that the model asks for clarification on the domain before proceeding.
+    transform: context.metadata.replies[0]
+  - type: icontains
+    value: imap.gmail.com
+  - type: icontains
+    value: smtp.gmail.com
+  - type: icontains
+    value: 993
+  - type: icontains
+    value: 465
+  - type: llm-rubric
+    value: ensure that the output contains server and port information for gmail.com
+  - type: javascript
+    value: file://grader.ts:yesNo
+    config:
+      claim: The response contains server name and port information for gmail.com.
+
+- vars:
+    turns:
+    - how do I set up my gmail.com email address on thunderbird?
+  assert:
+  - type: icontains
+    value: imap.gmail.com
+  - type: icontains
+    value: smtp.gmail.com
+  - type: icontains
+    value: 993
+  - type: icontains
+    value: 465
+  - type: llm-rubric
+    value: ensure that the output contains server and port information for gmail.com.
+  - type: javascript
+    value: file://grader.ts:yesNo
+    config:
+      claim: The response contains server name and port information for gmail.com.
+
+- vars:
+    turns:
+    - how do I set up my test@gmail.com email address on thunderbird?
+  assert:
+  - type: icontains
+    value: imap.gmail.com
+  - type: icontains
+    value: smtp.gmail.com
+  - type: icontains
+    value: 993
+  - type: icontains
+    value: 465
+  - type: llm-rubric
+    value: ensure that the output contains server and port information for gmail.com.
+  - type: javascript
+    value: file://grader.ts:yesNo
+    config:
+      claim: The response contains server name and port information for gmail.com.
+
+- vars:
+    turns: 
+    - how do I set up my example.com email address on thunderbird?
+  assert:
+  - type: llm-rubric
+    value: ensure that the output points at the service provider for help and nothing else.
+  - type: javascript
+    value: file://grader.ts:yesNo
+    config:
+      claim: The response recommends asking the service provider for help and nothing else.
+
+- vars:
+    turns: 
+    - how do I set up my gmial.com email address on thunderbird?
+    - yes, gmail.com is correct, thanks for picking that up.
+  assert:
+  - type: javascript
+    value: file://grader.ts:yesNo
+    config:
+      claim: The response asks a question and doesn't provide information.
+    transform: context.metadata.replies[0]
+  - type: llm-rubric
+    value: ensure that the model asks for clarification on the domain before proceeding to lookup gmail.com.
+    transform: context.metadata.replies[0]
+  - type: icontains
+    value: gmail.com
+    transform: context.metadata.replies[0]
+  - type: icontains
+    value: imap.gmail.com
+  - type: icontains
+    value: smtp.gmail.com
+  - type: icontains
+    value: 993
+  - type: icontains
+    value: 465
+  - type: llm-rubric
+    value: ensure that the output contains server and port information
+  - type: javascript
+    value: file://grader.ts:yesNo
+    config:
+      claim: The response contains server name and port information.
+
+- vars:
+    turns: 
+    - how do I set up my email address on thunderbird?
+  assert:
+  - type: llm-rubric
+    value: ensure that the output asks for more details before making suggestions
+  - type: javascript
+    value: file://grader.ts:yesNo
+    config:
+      claim: The response asks the user for their email domain.
+
+- vars:
+    turns: 
+    - how do I set up my test@example.com email address on thunderbird?
+  assert:
+  - type: llm-rubric
+    value: ensure that the output points at the service provider for help and nothing else.
+  - type: javascript
+    value: file://grader.ts:yesNo
+    config:
+      claim: The response recommends asking the service provider for help and nothing else.
+
+- vars:
+    turns:
+    - how do I set up my posteo.de email address on thunderbird?
+  assert:
+  - type: icontains
+    value: posteo.de
+  - type: icontains
+    value: 993
+  - type: not-icontains
+    value: imap.posteo.de
+  - type: icontains-any
+    value: ['465', '587']
+  - type: not-icontains
+    value: smtp.posteo.de
+  - type: llm-rubric
+    value: ensure that the output contains server and port information for posteo.de.
+  - type: javascript
+    value: file://grader.ts:yesNo
+    config:
+      claim: The response contains server name and port information for posteo.de.

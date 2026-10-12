@@ -1,7 +1,4 @@
-import * as readline from 'node:readline/promises';
-import { stdin as input, stdout as output } from 'node:process';
-
-interface OllamaChat {
+export interface OllamaChat {
     messages: OllamaMessage[],
     tools: object[],
     model: string
@@ -41,12 +38,12 @@ interface OllamaError {
     error: string;
 }
 
-class ServerError extends Error {
+class AgentError extends Error {
   public code?: number;
 
   constructor(message: string, code?: number, options?: ErrorOptions) {
     super(message, options);
-    this.name = 'ServerError';
+    this.name = 'AgentError';
     if (code !== undefined) {
         this.code = code
     }
@@ -59,10 +56,62 @@ function getToolFunction(toolFunction: OllamaToolFunctionRaw): OllamaToolFunctio
         return {name: 'lookup_mail_settings', arguments: {domain: args.domain}};
     }
 
-    throw new Error("toolFunction invalid: " + toolFunction.name)
+    throw new AgentError("toolFunction invalid: " + toolFunction.name, 101)
+}
+
+export async function processPrompt(chat: OllamaChat, prompt: string): Promise<string> {
+    const oldMessageCount = chat.messages.length
+    try {
+        chat.messages.push({"role":"user","content": prompt})
+        const promptResponse = await queryOllama(chat);
+
+        if ("tool_calls" in promptResponse.message && promptResponse.message.tool_calls.length > 0) {
+           throw new AgentError("An internal error occurred.", 105)
+        }
+
+        return promptResponse.message.content
+    } catch (error) {
+        if (error instanceof Error) {
+            console.error(error.message)
+        }
+        const newMessageCount = chat.messages.length
+        for (let i = 0; i < newMessageCount - oldMessageCount; i++) {
+            chat.messages.pop()
+        }
+        throw new AgentError("The call failed. Please try again later.", 102, {cause: error})
+    }
 }
 
 async function queryOllama(chat: OllamaChat): Promise<OllamaResponse> {
+    let queryResult: OllamaResponse = await queryOllamaStep(chat);
+    for (let i = 0; i < 5; i++) {
+        chat.messages.push(queryResult.message)
+        
+        if ("tool_calls" in queryResult.message && queryResult.message.tool_calls.length > 0) {
+            for (const toolCall of queryResult.message.tool_calls) {
+                switch (toolCall.function.name) {
+                    case "lookup_mail_settings":
+                        const temp = getToolFunction(toolCall.function)
+                        const domain = extractDomain(temp.arguments.domain)
+                        console.error(`Calling tool lookup_mail_settings(${domain})`)
+                        const response = await lookupDomainConfig(domain)
+                        chat.messages.push({"role":"tool","content": response, "tool_name": "lookup_mail_settings"})
+                        break;
+                        default:
+                            throw new AgentError('Invalid tool call: ' + toolCall.function.name, 106)
+                        }
+                    }
+            queryResult = await queryOllamaStep(chat)
+            continue
+        }
+
+        break
+    }
+
+    return queryResult
+}
+
+async function queryOllamaStep(chat: OllamaChat): Promise<OllamaResponse> {
     try {
         const headers: Headers = new Headers()
         headers.set('Content-Type', 'application/json')
@@ -83,7 +132,7 @@ async function queryOllama(chat: OllamaChat): Promise<OllamaResponse> {
         
         if (!response.ok) {
             const data = await response.json() as OllamaError;
-            throw new ServerError(`Ollama error: ${data.error}`, response.status)
+            throw new AgentError(`Ollama error: ${data.error}`, response.status)
         }
 
         const data = await response.json() as OllamaResponse;
@@ -91,7 +140,7 @@ async function queryOllama(chat: OllamaChat): Promise<OllamaResponse> {
     } catch (error) {
         if (error instanceof TypeError && typeof error.cause === "object" && error.cause !== null) {
             if ('code' in error.cause && error.cause.code === 'ECONNREFUSED') {
-                throw new ServerError("Couldn't connect to LLM server", undefined, {cause: error})
+                throw new AgentError("Couldn't connect to LLM server", 99, {cause: error})
             }
         }
         
@@ -118,72 +167,7 @@ async function lookupDomainConfig(domain: string) {
     return response.text()
 }
 
-async function startCliLoop(chat: OllamaChat) {
-    const rl = readline.createInterface({ input, output });
-
-    console.log("Interactive CLI Started. Type 'exit' to quit.\n");
-
-    try {
-        while (true) {
-            const oldMessageCount = chat.messages.length
-            let prompt = ""
-            try {
-                prompt = await rl.question('User> ');
-    
-                if (prompt.trim().toLowerCase() === 'exit') {
-                    console.log('Goodbye!');
-                    break; 
-                }
-            } catch (error) {
-                if (error instanceof Error && 'code' in error && error.code === 'ABORT_ERR') {
-                    console.log('Goodbye!')
-                    break
-                }
-                throw error
-            }
-
-            try {
-                chat.messages.push({"role":"user","content": prompt})
-                for (let i = 0; i < 5; i++) {
-                    const queryResult: OllamaResponse = await queryOllama(chat)
-                    chat.messages.push(queryResult.message)
-
-                    if ("tool_calls" in queryResult.message && queryResult.message.tool_calls.length > 0) {
-                        for (const toolCall of queryResult.message.tool_calls) {
-                            switch (toolCall.function.name) {
-                                case "lookup_mail_settings":
-                                    const temp = getToolFunction(toolCall.function)
-                                    const domain = extractDomain(temp.arguments.domain)
-                                    console.error(`Calling tool lookup_mail_settings(${domain})`)
-                                    const response = await lookupDomainConfig(domain)
-                                    chat.messages.push({"role":"tool","content": response, "tool_name": "lookup_mail_settings"})
-                                    break;
-                                default:
-                                    throw new Error('Invalid tool call: ' + toolCall.function.name)
-                            }
-                        }
-                        continue
-                    }
-
-                    console.log(`Response: ${queryResult.message.content}`)
-                    break
-                }
-            } catch (error) {
-                if (error instanceof Error) {
-                    console.error(error.message)
-                }
-                const newMessageCount = chat.messages.length
-                for (let i = 0; i < newMessageCount - oldMessageCount; i++) {
-                    chat.messages.pop()
-                }
-            }
-        }
-    } finally {
-        rl.close();
-    }
-}
-
-try {
+export async function createChat(): Promise<OllamaChat> {
     let chat: OllamaChat = {
         "messages": [],
         "model": process.env.OLLAMA_MODEL || "llama3.2:3b",
@@ -206,7 +190,7 @@ try {
         }]
     }
 
-    await queryOllama(chat)
+    await queryOllamaStep(chat)
 
     chat.messages.push({
         "role": "system",
@@ -218,11 +202,5 @@ try {
         `
     })
 
-    await startCliLoop(chat)
-} catch (error) {
-    if (error instanceof Error) {
-        console.error(error.message)
-    }
-    process.exitCode = 1
+    return chat
 }
-
