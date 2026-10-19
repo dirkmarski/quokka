@@ -1,5 +1,6 @@
-import { error } from 'console';
 import type { AssertionValueFunctionContext, GradingResult } from 'promptfoo'
+
+import { type OllamaMessage } from '../src/agent.ts'
 
 interface miniCheck {
     response: string;
@@ -38,7 +39,6 @@ async function minicheck(prompt: string): Promise<miniCheck> {
     }
 
     const data = await response.json() as OllamaMinicheckResponse;
-    console.log(data)
     result.response = data.response
     result.prob = Math.exp(data.logprobs[0].logprob)
     
@@ -63,6 +63,42 @@ function assertFaultyReply(reply: string): boolean {
     return false
 }
 
+async function assertDomainProvided(prompt: string): Promise<boolean> {
+    const request = `Document: ${prompt}\nClaim: the user has provided an email domain.`
+    const checkResult = await minicheck(request)
+    let response = false
+
+    if (checkResult.response === "Yes") {
+        if (checkResult.prob > 0.6) {
+            response = true
+        }
+    }
+
+    return response
+}
+
+export async function correctToolCall(output: string, context: AssertionValueFunctionContext): Promise<GradingResult> {
+    const grade = {pass: true, score: 1.0, reason: "All tool calls are correct"}
+    const transcript: OllamaMessage[] = context.metadata?.['transcript']
+
+    let domainProvided = false
+    for (const item of transcript) {
+        if (item.role == "system") {
+            continue
+        } else if (item.role == "user" && domainProvided == false) {
+            domainProvided = await assertDomainProvided(item.content)
+        } else if (item.role == "assistant" && Array.isArray(item.tool_calls)) {
+            if (domainProvided == false) {
+                grade.pass = false
+                grade.reason = "Tool call recommended before domain was provided."
+            }
+            break;
+        }
+    }
+
+    return grade
+}
+
 export async function rawTextResponse(output: string, context: AssertionValueFunctionContext): Promise<GradingResult> {
     const grade = {pass: true, score: 1.0, reason: "All replies are correct"}
     const replies = context.metadata?.['replies']
@@ -75,6 +111,67 @@ export async function rawTextResponse(output: string, context: AssertionValueFun
 
             break
         } 
+    }
+
+    return grade
+}
+
+function extractDomain(email: string): string {
+    const atIndex = email.lastIndexOf('@');
+  
+    if (atIndex === -1 || atIndex === email.length - 1) {
+        // No @ symbol, let's assume it is a valid domain for now
+        return email
+    }
+  
+    return email.substring(atIndex + 1);
+}
+
+function getDomain(toolCall: object): string {
+    if ("function" in toolCall && typeof toolCall.function === 'object' && toolCall.function !== null 
+        && "arguments" in toolCall.function && typeof toolCall.function.arguments === 'object' && toolCall.function.arguments !== null 
+        && "domain" in toolCall.function.arguments && typeof toolCall.function.arguments.domain === 'string') {
+        return extractDomain(toolCall.function.arguments.domain)
+    }
+
+    throw new Error(`No domain found`)
+}
+
+export async function correctDomain(output: string, context: AssertionValueFunctionContext): Promise<GradingResult> {
+    const grade = {pass: true, score: 0.0, reason: "All domains as expected"}
+    const transcript: OllamaMessage[] = context.metadata?.['transcript']
+    const expectedDomainCount = context.config?.domains.length
+
+    let index: number = 0
+    for (const item of transcript) {
+        if (item.role == "assistant" && Array.isArray(item.tool_calls)) {
+            for (const toolCall of item.tool_calls) {
+                if ("function" in toolCall && "name" in toolCall.function && toolCall.function.name === "lookup_mail_settings") {
+                    if (expectedDomainCount == 0) {
+                        grade.pass = false
+                        grade.reason = `Found a tool call when none were expected.`
+                        break
+                    }
+                    if (index >= expectedDomainCount) {
+                        grade.pass = false
+                        grade.reason = `Too many tool calls found. Only expected ${expectedDomainCount}`
+                        break
+                    }
+
+                    const domain = getDomain(toolCall)
+                    if (domain.toLowerCase() !== context.config?.domains[index].toLowerCase()) {
+                        grade.pass = false
+                        grade.reason = `Found domain ${domain}, expected ${context.config?.domains[index]}`
+                    }
+                    index++
+                }
+            }
+        }
+    }
+
+    if (index != expectedDomainCount) {
+        grade.pass = false
+        grade.reason = `Incorrect number of tool calls found: ${index}. Expected ${expectedDomainCount}`
     }
 
     return grade

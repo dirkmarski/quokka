@@ -14,7 +14,7 @@ interface OllamaResponse {
     total_duration: number;
 }
 
-interface OllamaMessage {
+export interface OllamaMessage {
     content: string;
     role: string;
     tool_calls?: OllamaToolCall[];

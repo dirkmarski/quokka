@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "A chat agent, written in TypeScript, that helps someone set up their email client. Built to work through agent mechanics end to end: tool use, conversation state, and evals against simulated users.",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test",
     "start": "node src/cli.ts",
     "typecheck": "tsc --noEmit",
     "eval": "promptfoo eval -c evals/promptfooconfig.yaml"

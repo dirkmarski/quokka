@@ -11,6 +11,8 @@ defaultTest:
   assert:
   - type: javascript
     value: file://grader.ts:rawTextResponse
+  - type: javascript
+    value: file://grader.ts:correctToolCall
 
 evaluateOptions:
   repeat: 10
@@ -49,6 +51,11 @@ tests:
     value: file://grader.ts:yesNo
     config:
       claim: The response contains server name and port information for gmail.com.
+  - type: javascript
+    value: file://grader.ts:correctDomain
+    config:
+      domains:
+      - gmail.com
 
 - vars:
     turns:
@@ -68,6 +75,11 @@ tests:
     value: file://grader.ts:yesNo
     config:
       claim: The response contains server name and port information for gmail.com.
+  - type: javascript
+    value: file://grader.ts:correctDomain
+    config:
+      domains:
+      - gmail.com
 
 - vars:
     turns:
@@ -87,6 +99,11 @@ tests:
     value: file://grader.ts:yesNo
     config:
       claim: The response contains server name and port information for gmail.com.
+  - type: javascript
+    value: file://grader.ts:correctDomain
+    config:
+      domains:
+      - gmail.com
 
 - vars:
     turns: 
@@ -98,6 +115,11 @@ tests:
     value: file://grader.ts:yesNo
     config:
       claim: The response recommends asking the service provider for help and nothing else.
+  - type: javascript
+    value: file://grader.ts:correctDomain
+    config:
+      domains:
+      - example.com
 
 - vars:
     turns: 
@@ -129,6 +151,12 @@ tests:
     value: file://grader.ts:yesNo
     config:
       claim: The response contains server name and port information.
+  - type: javascript
+    value: file://grader.ts:correctDomain
+    config:
+      domains:
+      - gmial.com   # user turn 1
+      - gmail.com   # user turn 2
 
 - vars:
     turns: 
@@ -140,6 +168,10 @@ tests:
     value: file://grader.ts:yesNo
     config:
       claim: The response asks the user for their email domain.
+  - type: javascript
+    value: file://grader.ts:correctDomain
+    config:
+      domains: []
 
 - vars:
     turns: 
@@ -151,6 +183,11 @@ tests:
     value: file://grader.ts:yesNo
     config:
       claim: The response recommends asking the service provider for help and nothing else.
+  - type: javascript
+    value: file://grader.ts:correctDomain
+    config:
+      domains:
+      - example.com
 
 - vars:
     turns:
@@ -172,3 +209,8 @@ tests:
     value: file://grader.ts:yesNo
     config:
       claim: The response contains server name and port information for posteo.de.
+  - type: javascript
+    value: file://grader.ts:correctDomain
+    config:
+      domains:
+      - posteo.de
