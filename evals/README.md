@@ -22,6 +22,11 @@ single pass proves little.
 
 - **Code checks** - expected server names and ports present, wrong ones absent,
   and no raw tool-call text leaking into a reply (applied to every case).
+- **Grounded settings** (every case) - every server name and mail port a reply
+  states must appear in a tool result or in what the user typed. This catches
+  invented hostnames, guessed ports and links the lookup never returned.
+  Two-part domains such as gmail.com are allowed, so the agent can give examples
+  while asking which provider the user has.
 - **Rubric judge** - a local `qwen2.5:7b-instruct` grades behaviour code cannot
   check, such as asking for clarification.
 - **Fact check** - Bespoke-MiniCheck tests a stated claim against the reply
@@ -49,6 +54,14 @@ fixtures are conversations recorded by the eval itself (`grader.fixtures.ts`).
     npm test
 
 The lookup-order tests call MiniCheck, so Ollama must be running.
+
+## Who wrote what
+
+The agent and the LLM-facing graders (lookup order, lookup domain, raw tool-call
+text, fact check) are hand-written. Code with no direct bearing on the LLM work -
+the grounded-settings string matching, small fixes to the lookup-domain grader,
+the unit tests and their fixtures - was written by Claude (AI) to my criteria, and
+is marked as such in the code.
 
 ## Running it
 

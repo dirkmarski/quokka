@@ -13,6 +13,8 @@ defaultTest:
     value: file://grader.ts:rawTextResponse
   - type: javascript
     value: file://grader.ts:correctToolCall
+  - type: javascript
+    value: file://grader.ts:groundedSettings
 
 evaluateOptions:
   repeat: 10

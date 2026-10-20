@@ -90,6 +90,7 @@ export async function correctToolCall(output: string, context: AssertionValueFun
         } else if (item.role == "assistant" && Array.isArray(item.tool_calls)) {
             if (domainProvided == false) {
                 grade.pass = false
+                grade.score = 0.0 // Claude, 20 Oct 2026: a fail scored 1.0
                 grade.reason = "Tool call recommended before domain was provided."
             }
             break;
@@ -138,30 +139,28 @@ function getDomain(toolCall: object): string {
 }
 
 export async function correctDomain(output: string, context: AssertionValueFunctionContext): Promise<GradingResult> {
-    const grade = {pass: true, score: 0.0, reason: "All domains as expected"}
+    // Hygiene fixes by Claude, 20 Oct 2026, to Dirk's 19 Oct TODO: score 1 on a pass,
+    // a named error for missing config, every failure reason kept, and the too-many
+    // count reports the lookups found rather than the ones matched.
+    const grade = {pass: true, score: 1.0, reason: "All domains as expected"}
     const transcript: OllamaMessage[] = context.metadata?.['transcript']
-    const expectedDomainCount = context.config?.domains.length
+    const domains = context.config?.['domains']
+    if (!Array.isArray(domains)) {
+        throw new Error("Missing domains in the config.")
+    }
+    const expectedDomainCount = domains.length
+    const failures: string[] = []
 
     let index: number = 0
     for (const item of transcript) {
         if (item.role == "assistant" && Array.isArray(item.tool_calls)) {
             for (const toolCall of item.tool_calls) {
                 if ("function" in toolCall && "name" in toolCall.function && toolCall.function.name === "lookup_mail_settings") {
-                    if (expectedDomainCount == 0) {
-                        grade.pass = false
-                        grade.reason = `Found a tool call when none were expected.`
-                        break
-                    }
-                    if (index >= expectedDomainCount) {
-                        grade.pass = false
-                        grade.reason = `Too many tool calls found. Only expected ${expectedDomainCount}`
-                        break
-                    }
-
-                    const domain = getDomain(toolCall)
-                    if (domain.toLowerCase() !== context.config?.domains[index].toLowerCase()) {
-                        grade.pass = false
-                        grade.reason = `Found domain ${domain}, expected ${context.config?.domains[index]}`
+                    if (index < expectedDomainCount) {
+                        const domain = getDomain(toolCall)
+                        if (domain.toLowerCase() !== domains[index].toLowerCase()) {
+                            failures.push(`Found domain ${domain}, expected ${domains[index]}`)
+                        }
                     }
                     index++
                 }
@@ -169,9 +168,75 @@ export async function correctDomain(output: string, context: AssertionValueFunct
         }
     }
 
-    if (index != expectedDomainCount) {
+    if (expectedDomainCount == 0 && index > 0) {
+        failures.push(`Found a tool call when none were expected (found: ${index}).`)
+    } else if (index > expectedDomainCount) {
+        failures.push(`Too many tool calls found: ${index}. Expected ${expectedDomainCount}`)
+    } else if (index < expectedDomainCount) {
+        failures.push(`Incorrect number of tool calls found: ${index}. Expected ${expectedDomainCount}`)
+    }
+
+    if (failures.length > 0) {
         grade.pass = false
-        grade.reason = `Incorrect number of tool calls found: ${index}. Expected ${expectedDomainCount}`
+        grade.score = 0.0
+        grade.reason = failures.join("\n")
+    }
+
+    return grade
+}
+
+// ---------------------------------------------------------------------------
+// Written by Claude (AI), 20 Oct 2026, to Dirk's criteria for slice 4c.
+// String matching with no LLM in it, so outside the hand-written scope (see README).
+//
+// Every server name and mail port the agent states must come from somewhere it saw:
+// a tool result or the user's own turns. Anything else was invented, including links
+// the tool never returned (Dirk, 7 Oct 2026: "unrelated information").
+// - Hostnames of 3+ labels are checked (imap.gmail.com, myaccount.google.com).
+//   Two-label domains pass, so "such as gmail.com or yahoo.com" is allowed.
+// - Mail ports are checked against the same evidence.
+// - Replies that are raw tool-call text are skipped; rawTextResponse grades those.
+// ---------------------------------------------------------------------------
+
+const HOSTNAME = /(?<![a-z0-9.-])(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.){2,}[a-z]{2,}(?![a-z0-9-])/gi
+const MAIL_PORT = /(?<!\d)(?:25|110|143|465|587|993|995|2525)(?!\d)/g
+
+function findHostnames(text: string): Set<string> {
+    return new Set((text.match(HOSTNAME) ?? []).map(host => host.toLowerCase()))
+}
+
+function findPorts(text: string): Set<string> {
+    return new Set(text.match(MAIL_PORT) ?? [])
+}
+
+export async function groundedSettings(output: string, context: AssertionValueFunctionContext): Promise<GradingResult> {
+    const grade = {pass: true, score: 1.0, reason: "All server names and ports came from the tool or the user"}
+    const transcript: OllamaMessage[] = context.metadata?.['transcript']
+    const replies: string[] = context.metadata?.['replies']
+
+    const evidence = transcript
+        .filter(item => item.role == "tool" || item.role == "user")
+        .map(item => item.content)
+        .join("\n")
+    const knownHosts = findHostnames(evidence)
+    const knownPorts = findPorts(evidence)
+
+    const failures: string[] = []
+    replies.forEach((reply, i) => {
+        if (assertFaultyReply(reply)) {
+            return
+        }
+        const hosts = [...findHostnames(reply)].filter(host => !knownHosts.has(host))
+        const ports = [...findPorts(reply)].filter(port => !knownPorts.has(port))
+        if (hosts.length > 0 || ports.length > 0) {
+            failures.push(`Reply ${i + 1} states settings not from the tool or the user - hostnames: [${hosts.join(", ")}], ports: [${ports.join(", ")}]`)
+        }
+    })
+
+    if (failures.length > 0) {
+        grade.pass = false
+        grade.score = 0.0
+        grade.reason = failures.join("\n")
     }
 
     return grade

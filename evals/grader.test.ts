@@ -1,9 +1,11 @@
+// Written by Claude (AI): unit tests for the graders (see README).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { AssertionValueFunctionContext } from 'promptfoo'
 import { type OllamaMessage } from '../src/agent.ts'
-import { correctToolCall, correctDomain } from './grader.ts'
-import { autocorrectedTypo, addressLookup, rawTextToolCall, placeholderLookup } from './grader.fixtures.ts'
+import { correctToolCall, correctDomain, groundedSettings } from './grader.ts'
+import { autocorrectedTypo, addressLookup, rawTextToolCall, placeholderLookup,
+    settingsFromTool, inventedLink, inventedPorts, inventedInSecondReply } from './grader.fixtures.ts'
 
 const knownGood: OllamaMessage[] = [
     {"role":"system","content":"You are an email setup agent.\n        Only provide server names, ports and security settings that came from the tool.\n        If the tool fails to run or doesn't find anything, say so. Direct the user to get the required settings from the email provider.\n        Do not guess facts or recommendations.\n        "},
@@ -34,6 +36,7 @@ test('Tool order grader is correct for an invalid multi-prompt conversation', as
     const context = { metadata: { transcript: knownBad } } as unknown as AssertionValueFunctionContext
     const grade = await correctToolCall('', context)
     assert.equal(grade.pass, false, grade.reason)
+    assert.equal(grade.score, 0)
 })
 
 // Hand-built: no recorded run asks before correcting the typo, so the correct case-5
@@ -97,4 +100,97 @@ test('Domain grader fails a lookup when none is expected', async () => {
     const grade = await gradeDomains(knownBad, [])
     assert.equal(grade.pass, false)
     assert.match(grade.reason, /Found a tool call when none were expected/)
+})
+
+test('Domain grader keeps every failure reason and counts every lookup found', async () => {
+    const grade = await gradeDomains(autocorrectedTypo, ['gmial.com'])
+    assert.equal(grade.pass, false)
+    assert.equal(grade.score, 0)
+    assert.match(grade.reason, /Found domain gmail\.com, expected gmial\.com/)
+    assert.match(grade.reason, /Too many tool calls found: 2\. Expected 1/)
+})
+
+test('Domain grader scores a pass as 1', async () => {
+    const grade = await gradeDomains(knownGood, ['gmail.com'])
+    assert.equal(grade.score, 1)
+})
+
+test('Domain grader throws a named error when the config has no domains', async () => {
+    const context = { metadata: { transcript: knownGood }, config: {} } as unknown as AssertionValueFunctionContext
+    await assert.rejects(correctDomain('', context), /Missing domains in the config/)
+})
+
+// groundedSettings: every hostname (3+ labels) and mail port in a reply must come from a
+// tool result or the user's turns. Replies are rebuilt from the transcript the way the
+// provider records them: assistant messages that are not tool calls.
+async function gradeGrounded(transcript: OllamaMessage[]) {
+    const replies = transcript.filter(m => m.role == "assistant" && !m.tool_calls).map(m => m.content)
+    const context = { metadata: { transcript, replies } } as unknown as AssertionValueFunctionContext
+    return groundedSettings('', context)
+}
+
+test('Settings grader passes settings and links that came from the tool', async () => {
+    const grade = await gradeGrounded(settingsFromTool)
+    assert.equal(grade.pass, true, grade.reason)
+    assert.equal(grade.score, 1)
+})
+
+test('Settings grader fails a link the tool never returned', async () => {
+    const grade = await gradeGrounded(inventedLink)
+    assert.equal(grade.pass, false)
+    assert.equal(grade.score, 0)
+    assert.match(grade.reason, /hostnames: \[myaccount\.google\.com\], ports: \[\]/)
+})
+
+test('Settings grader fails ports offered after a failed lookup', async () => {
+    const grade = await gradeGrounded(inventedPorts)
+    assert.equal(grade.pass, false)
+    assert.match(grade.reason, /ports: \[995, 587\]/)
+})
+
+test('Settings grader names the reply that failed', async () => {
+    const grade = await gradeGrounded(inventedInSecondReply)
+    assert.equal(grade.pass, false)
+    assert.match(grade.reason, /^Reply 2 /)
+})
+
+// Hand-built: the user supplies their own server; repeating it back is not invention.
+test('Settings grader passes a server and port the user gave', async () => {
+    const grade = await gradeGrounded([
+        knownGood[0]!,
+        {"role":"user","content":"my provider says to use mail.example.com.au on port 587"},
+        {"role":"assistant","content":"Then enter MAIL.EXAMPLE.COM.AU as the outgoing server, port 587."}
+    ])
+    assert.equal(grade.pass, true, grade.reason)
+})
+
+// Hand-built: two-label domains used as examples are allowed (Dirk, 7 Oct 2026).
+test('Settings grader passes two-label example domains', async () => {
+    const grade = await gradeGrounded([
+        knownGood[0]!,
+        {"role":"user","content":"how do I set up my email?"},
+        {"role":"assistant","content":"Which provider is it, such as gmail.com or yahoo.com?"}
+    ])
+    assert.equal(grade.pass, true, grade.reason)
+})
+
+// Hand-built: raw tool-call text is left to rawTextResponse, so it is not failed twice.
+test('Settings grader skips a reply that is raw tool-call text', async () => {
+    const grade = await gradeGrounded([
+        knownGood[0]!,
+        {"role":"user","content":"how do I set up my email?"},
+        {"role":"assistant","content":"{\"name\": \"lookup_mail_settings\", \"parameters\": {\"domain\": \"imap.gmail.com\"}}"}
+    ])
+    assert.equal(grade.pass, true, grade.reason)
+})
+
+// Hand-built: an unsourced hostname at the end of a sentence is still found.
+test('Settings grader fails an invented hostname before a full stop', async () => {
+    const grade = await gradeGrounded([
+        knownGood[0]!,
+        {"role":"user","content":"how do I set up my email?"},
+        {"role":"assistant","content":"Try imap.yourprovider.com."}
+    ])
+    assert.equal(grade.pass, false)
+    assert.match(grade.reason, /hostnames: \[imap\.yourprovider\.com\]/)
 })
