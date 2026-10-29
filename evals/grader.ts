@@ -1,6 +1,7 @@
 import type { AssertionValueFunctionContext, GradingResult } from 'promptfoo'
 
 import { type OllamaMessage } from '../src/agent.ts'
+import { domainGivenByUser } from '../src/domain.ts'
 
 interface miniCheck {
     response: string;
@@ -10,6 +11,29 @@ interface miniCheck {
 interface OllamaMinicheckResponse {
     "response": string;
     "logprobs": [ { "token": string; "logprob": number; } ]
+}
+
+// Written by Claude (AI), 29 Oct 2026: the agent blocks a lookup for a domain the user
+// never typed (domainGivenByUser in agent.ts). Graded on the solution (Dirk, 29 Oct), so the
+// transcript graders count only the lookups that actually ran. Same check, same inputs as
+// the agent: the raw domain argument against the user turns so far.
+function lookupsThatRan(transcript: OllamaMessage[]): Set<object> {
+    const ran = new Set<object>()
+    const userTurns: string[] = []
+    for (const item of transcript) {
+        if (item.role == "user") {
+            userTurns.push(item.content)
+        } else if (item.role == "assistant" && Array.isArray(item.tool_calls)) {
+            for (const toolCall of item.tool_calls) {
+                const args = toolCall.function.arguments
+                const domain = typeof args === 'object' && args !== null && 'domain' in args ? args.domain : undefined
+                if (domainGivenByUser(domain, userTurns)) {
+                    ran.add(toolCall)
+                }
+            }
+        }
+    }
+    return ran
 }
 
 async function minicheck(prompt: string): Promise<miniCheck> {
@@ -95,6 +119,7 @@ export async function correctToolCall(output: string, context: AssertionValueFun
     const grade = {pass: true, score: 1.0, reason: "All tool calls are correct"}
     const transcript: OllamaMessage[] = context.metadata?.['transcript']
 
+    const ran = lookupsThatRan(transcript) // Claude, 29 Oct 2026: blocked lookups are skipped
     let domainProvided = false
     for (const item of transcript) {
         if (item.role == "system") {
@@ -102,6 +127,9 @@ export async function correctToolCall(output: string, context: AssertionValueFun
         } else if (item.role == "user" && domainProvided == false) {
             domainProvided = await assertDomainProvided(item.content)
         } else if (item.role == "assistant" && Array.isArray(item.tool_calls)) {
+            if (!item.tool_calls.some(toolCall => ran.has(toolCall))) {
+                continue
+            }
             if (domainProvided == false) {
                 grade.pass = false
                 grade.score = 0.0 // Claude, 20 Oct 2026: a fail scored 1.0
@@ -195,11 +223,12 @@ export async function correctDomain(output: string, context: AssertionValueFunct
     const expectedDomainCount = domains.length
     const failures: string[] = []
 
+    const ran = lookupsThatRan(transcript) // Claude, 29 Oct 2026: blocked lookups are skipped
     let index: number = 0
     for (const item of transcript) {
         if (item.role == "assistant" && Array.isArray(item.tool_calls)) {
             for (const toolCall of item.tool_calls) {
-                if ("function" in toolCall && "name" in toolCall.function && toolCall.function.name === "lookup_mail_settings") {
+                if ("function" in toolCall && "name" in toolCall.function && toolCall.function.name === "lookup_mail_settings" && ran.has(toolCall)) {
                     if (index < expectedDomainCount) {
                         const domain = getDomain(toolCall)
                         if (domain.toLowerCase() !== domains[index].toLowerCase()) {

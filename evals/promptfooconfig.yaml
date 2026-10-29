@@ -39,7 +39,8 @@ tests:
       claim: The response asks for details of the email address or domain name.
     transform: context.metadata.replies[0]
   - type: llm-rubric
-    value: ensure that the model asks for clarification on the domain before proceeding.
+    # Claude, 29 Oct 2026 (wording approved by Dirk): shape, not content - MiniCheck checks the ask (Q-20, R6)
+    value: The reply opens directly with its question - no apology, no reference to a lookup, no preamble.
     transform: context.metadata.replies[0]
   - type: icontains
     value: imap.gmail.com
@@ -110,8 +111,10 @@ tests:
       - gmail.com
 
 - vars:
+    # Claude, 29 Oct 2026 (Dirk: "make something up"): example.com is a reserved example domain that
+    # bigger models recognise as a placeholder (Q-30). Made-up domain, unregistered and not in the ISPDB.
     turns: 
-    - how do I set up my example.com email address on thunderbird?
+    - how do I set up my wattlebay-plumbing.com.au email address on thunderbird?
   assert:
   - type: llm-rubric
     value: ensure that the output points at the service provider for help and nothing else.
@@ -123,7 +126,7 @@ tests:
     value: file://grader.ts:correctDomain
     config:
       domains:
-      - example.com
+      - wattlebay-plumbing.com.au
 
 - vars:
     turns: 
@@ -167,7 +170,8 @@ tests:
     - how do I set up my email address on thunderbird?
   assert:
   - type: llm-rubric
-    value: ensure that the output asks for more details before making suggestions
+    # Claude, 29 Oct 2026 (wording approved by Dirk): shape, not content - MiniCheck checks the ask (Q-20, R6)
+    value: The reply opens directly with its question - no apology, no reference to a lookup, no preamble.
   - type: javascript
     value: file://grader.ts:yesNo
     config:
@@ -178,8 +182,10 @@ tests:
       domains: []
 
 - vars:
+    # Claude, 29 Oct 2026 (Dirk: "make something up"): example.com is a reserved example domain that
+    # bigger models recognise as a placeholder (Q-30). Made-up domain, unregistered and not in the ISPDB.
     turns: 
-    - how do I set up my test@example.com email address on thunderbird?
+    - how do I set up my sam@kestrelridge-studio.net email address on thunderbird?
   assert:
   - type: llm-rubric
     value: ensure that the output points at the service provider for help and nothing else.
@@ -191,7 +197,7 @@ tests:
     value: file://grader.ts:correctDomain
     config:
       domains:
-      - example.com
+      - kestrelridge-studio.net
 
 - vars:
     turns:

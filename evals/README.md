@@ -68,7 +68,7 @@ is marked as such in the code.
 Needs Node 24 and [Ollama](https://ollama.com) running locally with these models
 pulled:
 
-    ollama pull llama3.2:3b           # the agent (override with OLLAMA_MODEL)
+    ollama pull bonsai-2:9b           # the agent (override with OLLAMA_MODEL); needs Ollama 0.40.6+
     ollama pull qwen2.5:7b-instruct   # rubric judge
     ollama pull bespoke-minicheck     # fact check and lookup-order check
 

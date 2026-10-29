@@ -1,3 +1,5 @@
+import { domainGivenByUser, domainsInText } from './domain.ts'
+
 export interface OllamaChat {
     messages: OllamaMessage[],
     tools: object[],
@@ -93,9 +95,25 @@ async function queryOllama(chat: OllamaChat): Promise<OllamaResponse> {
                     case "lookup_mail_settings":
                         const temp = getToolFunction(toolCall.function)
                         const domain = extractDomain(temp.arguments.domain)
-                        console.error(`Calling tool lookup_mail_settings(${domain})`)
-                        const response = await lookupDomainConfig(domain)
-                        chat.messages.push({"role":"tool","content": response, "tool_name": "lookup_mail_settings"})
+                        const userTurns = chat.messages.filter(m => m.role === 'user').map(m => m.content)
+                        const typedDomains = userTurns.flatMap(t => domainsInText(t))
+
+                        const userProvidedDomain = domainGivenByUser(temp.arguments.domain, userTurns)
+                        if (userProvidedDomain) {
+                            console.error(`Calling tool lookup_mail_settings(${domain})`)
+                            const response = await lookupDomainConfig(domain)
+                            chat.messages.push({"role":"tool","content": response, "tool_name": "lookup_mail_settings"})
+                        } else {
+                            let message = `This is a system message - the user has not seen or sent this. 
+                                            The domain extracted (${temp.arguments.domain}) was not provided by the user. 
+                                            The user didn't provide a suitable domain, ask the user to provide one.`
+                            if (typedDomains.length > 0) {
+                               message = `This is a system message - the user has not seen or sent this. 
+                                            The domain extracted (${temp.arguments.domain}) was not provided by the user. 
+                                            The user provided domain is ${typedDomains.join(', ')}. The tool should be called with that domain instead.` 
+                            }
+                            chat.messages.push({"role":"tool","content": message, "tool_name": "lookup_mail_settings"})
+                        }
                         break;
                         default:
                             throw new AgentError('Invalid tool call: ' + toolCall.function.name, 106)
@@ -170,7 +188,7 @@ async function lookupDomainConfig(domain: string) {
 export async function createChat(): Promise<OllamaChat> {
     let chat: OllamaChat = {
         "messages": [],
-        "model": process.env.OLLAMA_MODEL || "llama3.2:3b",
+        "model": process.env.OLLAMA_MODEL || "bonsai-2:9b",
         "tools": [{
             "type": "function",
             "function": {
@@ -199,6 +217,9 @@ export async function createChat(): Promise<OllamaChat> {
         Only provide server names, ports and security settings that came from the tool.
         If the tool fails to run or doesn't find anything, say so. Direct the user to get the required settings from the email provider.
         Do not guess facts or recommendations.
+        When the lookup fails, point the user at the provider and nothing else.
+        If the domain isn't provided, ask the user to provide it before performing a lookup or making recommendations.
+        Lookup the domain exactly as typed. If the lookup fails, check if the domain looks similar to known provider and ask the user if they meant that domain instead.
         `
     })
 

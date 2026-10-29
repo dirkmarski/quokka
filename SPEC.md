@@ -23,7 +23,7 @@ Drafted by Claude from Dirk's rulings; reviewed and corrected by Dirk.
 Cases 1 (turn 1) and 6. (Q-13)
 
 - **Must:** ask for the email address or domain.
-- **Must not:** call the lookup; guess a domain - a placeholder, the mail
+- **Must not:** run a lookup; guess a domain - a placeholder, the mail
   client's name (`thunderbird.org`) or a popular provider (`gmail.com`); give
   generic settings.
 - **Shape:** one question, nothing else.
@@ -35,8 +35,8 @@ Case 5, turn 1. (Q-16)
 - **Must:** look up the domain exactly as typed. If the lookup succeeds, do not
   second-guess the user - answer as in S3. If it fails, propose the likely
   correction and ask the user to confirm it.
-- **Must not:** look up a corrected spelling before the user confirms it, or
-  answer about a different domain without saying so.
+- **Must not:** run a lookup of a corrected spelling before the user confirms
+  it, or answer about a different domain without saying so.
 - **Shape:** name both spellings, then one question.
 
 ## S3 - Lookup succeeds
@@ -65,3 +65,10 @@ Case 5, turn 2.
 
 - **Must:** look up the confirmed domain and answer as in S3.
 - **Must not:** claim this or the earlier lookup failed. (Q-17)
+
+## How this is graded
+
+Pass or fail is graded on the solution: the lookups that actually ran and the
+replies the user saw. A lookup the model asks for but the agent blocks is not a
+failure. Blocked attempts are counted separately, per prompt version, to show
+how the model itself behaves and how much the check is doing.

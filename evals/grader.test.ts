@@ -33,8 +33,26 @@ test('Tool order grader is correct for a valid multi-prompt conversation', async
     assert.equal(grade.pass, true, grade.reason)
 })
 
-test('Tool order grader is correct for an invalid multi-prompt conversation', async () => {
+// 29 Oct 2026: the agent now blocks a lookup for a domain the user never typed, and the
+// graders count only lookups that ran. knownBad's gmail.com guess would be blocked.
+test('Tool order grader skips a lookup the agent blocked', async () => {
     const context = { metadata: { transcript: knownBad } } as unknown as AssertionValueFunctionContext
+    const grade = await correctToolCall('', context)
+    assert.equal(grade.pass, true, grade.reason)
+})
+
+// Hand-built: a domain the user typed that is not their email domain gets past the agent's
+// check, so the lookup runs - and this grader still fails it.
+const lookupOfMentionedDomain: OllamaMessage[] = [
+    knownGood[0]!,
+    {"role":"user","content":"I read on posteo.de that you can help with mail apps. How do I set up thunderbird?"},
+    {"role":"assistant","content":"","tool_calls":[{"id":"call_ment0001","function":{"name":"lookup_mail_settings","arguments":{"domain":"posteo.de"}}}]},
+    {"role":"tool","content":"An error occurred. The domain may not be in the database.","tool_name":"lookup_mail_settings"},
+    {"role":"assistant","content":"I couldn't find settings for posteo.de. Please ask your email provider."}
+]
+
+test('Tool order grader fails a lookup that ran before an email domain was given', async () => {
+    const context = { metadata: { transcript: lookupOfMentionedDomain } } as unknown as AssertionValueFunctionContext
     const grade = await correctToolCall('', context)
     assert.equal(grade.pass, false, grade.reason)
     assert.equal(grade.score, 0)
@@ -87,9 +105,14 @@ test('Domain grader fails when an expected lookup is missing', async () => {
 })
 
 test('Domain grader fails more lookups than expected', async () => {
-    const grade = await gradeDomains(placeholderLookup, ['gmail.com'])
+    const grade = await gradeDomains(typoAskedBeforeCorrecting, ['gmial.com'])
     assert.equal(grade.pass, false)
     assert.match(grade.reason, /Too many tool calls found/)
+})
+
+test('Domain grader skips lookups the agent blocked', async () => {
+    assert.equal((await gradeDomains(placeholderLookup, ['gmail.com'])).pass, true)
+    assert.equal((await gradeDomains(knownBad, [])).pass, true)
 })
 
 test('Domain grader passes no lookup when none is expected', async () => {
@@ -98,16 +121,16 @@ test('Domain grader passes no lookup when none is expected', async () => {
 })
 
 test('Domain grader fails a lookup when none is expected', async () => {
-    const grade = await gradeDomains(knownBad, [])
+    const grade = await gradeDomains(knownGood, [])
     assert.equal(grade.pass, false)
     assert.match(grade.reason, /Found a tool call when none were expected/)
 })
 
 test('Domain grader keeps every failure reason and counts every lookup found', async () => {
-    const grade = await gradeDomains(autocorrectedTypo, ['gmial.com'])
+    const grade = await gradeDomains(typoAskedBeforeCorrecting, ['gmail.com'])
     assert.equal(grade.pass, false)
     assert.equal(grade.score, 0)
-    assert.match(grade.reason, /Found domain gmail\.com, expected gmial\.com/)
+    assert.match(grade.reason, /Found domain gmial\.com, expected gmail\.com/)
     assert.match(grade.reason, /Too many tool calls found: 2\. Expected 1/)
 })
 
