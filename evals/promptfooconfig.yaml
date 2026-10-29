@@ -15,6 +15,8 @@ defaultTest:
     value: file://grader.ts:correctToolCall
   - type: javascript
     value: file://grader.ts:groundedSettings
+  - type: javascript
+    value: file://grader.ts:correctToolCallErrorMessage
 
 evaluateOptions:
   repeat: 10

@@ -3,9 +3,10 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { AssertionValueFunctionContext } from 'promptfoo'
 import { type OllamaMessage } from '../src/agent.ts'
-import { correctToolCall, correctDomain, groundedSettings } from './grader.ts'
+import { correctToolCall, correctDomain, groundedSettings, correctToolCallErrorMessage } from './grader.ts'
 import { autocorrectedTypo, addressLookup, rawTextToolCall, placeholderLookup,
-    settingsFromTool, inventedLink, inventedPorts, inventedInSecondReply } from './grader.fixtures.ts'
+    settingsFromTool, inventedLink, inventedPorts, inventedInSecondReply,
+    falseFailureClaim, falseFailureAdditional, answerMentionsUnableToFind, failedLookupReported } from './grader.fixtures.ts'
 
 const knownGood: OllamaMessage[] = [
     {"role":"system","content":"You are an email setup agent.\n        Only provide server names, ports and security settings that came from the tool.\n        If the tool fails to run or doesn't find anything, say so. Direct the user to get the required settings from the email provider.\n        Do not guess facts or recommendations.\n        "},
@@ -193,4 +194,43 @@ test('Settings grader fails an invented hostname before a full stop', async () =
     ])
     assert.equal(grade.pass, false)
     assert.match(grade.reason, /hostnames: \[imap\.yourprovider\.com\]/)
+})
+
+// correctToolCallErrorMessage: after a successful lookup, the reply must not claim the tool
+// failed. These call MiniCheck, so Ollama must be running.
+async function gradeErrorClaims(transcript: OllamaMessage[]) {
+    const context = { metadata: { transcript } } as unknown as AssertionValueFunctionContext
+    return correctToolCallErrorMessage('', context)
+}
+
+test('Tool error grader fails a claimed failure after a successful lookup', async () => {
+    const grade = await gradeErrorClaims(falseFailureClaim)
+    assert.equal(grade.pass, false)
+    assert.equal(grade.score, 0)
+})
+
+test('Tool error grader judges the second turn after a correct first turn', async () => {
+    const grade = await gradeErrorClaims(falseFailureClaim)
+    assert.match(grade.reason, /It seems that the tool was unable to retrieve the mail settings/)
+})
+
+test('Tool error grader fails "unable to find any additional settings" (labelled by Dirk)', async () => {
+    const grade = await gradeErrorClaims(falseFailureAdditional)
+    assert.equal(grade.pass, false)
+})
+
+test('Tool error grader passes a correct answer that says "if you are unable to find"', async () => {
+    const grade = await gradeErrorClaims(answerMentionsUnableToFind)
+    assert.equal(grade.pass, true, grade.reason)
+    assert.equal(grade.score, 1)
+})
+
+test('Tool error grader passes a failed lookup reported truthfully', async () => {
+    const grade = await gradeErrorClaims(failedLookupReported)
+    assert.equal(grade.pass, true, grade.reason)
+})
+
+test('Tool error grader passes a multi-turn conversation with correct answers', async () => {
+    const grade = await gradeErrorClaims(knownGood)
+    assert.equal(grade.pass, true, grade.reason)
 })

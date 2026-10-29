@@ -77,6 +77,20 @@ async function assertDomainProvided(prompt: string): Promise<boolean> {
     return response
 }
 
+async function assertToolCallFailed(prompt: string): Promise<boolean> {
+    const request = `Document: ${prompt}\nClaim: the tool failed the lookup.`
+    const checkResult = await minicheck(request)
+    let response = false
+
+    if (checkResult.response === "Yes") {
+        if (checkResult.prob > 0.6) {
+            response = true
+        }
+    }
+
+    return response
+}
+
 export async function correctToolCall(output: string, context: AssertionValueFunctionContext): Promise<GradingResult> {
     const grade = {pass: true, score: 1.0, reason: "All tool calls are correct"}
     const transcript: OllamaMessage[] = context.metadata?.['transcript']
@@ -94,6 +108,36 @@ export async function correctToolCall(output: string, context: AssertionValueFun
                 grade.reason = "Tool call recommended before domain was provided."
             }
             break;
+        }
+    }
+
+    return grade
+}
+
+export async function correctToolCallErrorMessage(output: string, context: AssertionValueFunctionContext): Promise<GradingResult> {
+    const grade = {pass: true, score: 1.0, reason: "No incorrect tool error reports"}
+    const transcript: OllamaMessage[] = context.metadata?.['transcript']
+
+    let toolCalled = false
+    let toolResult = ""
+    let toolCallFailedClaim = false
+    for (const item of transcript) {
+        if (toolCalled) {
+            toolCallFailedClaim = await assertToolCallFailed(item.content)
+            if (toolCallFailedClaim == true) {
+                grade.pass = false
+                grade.score = 0.0
+                grade.reason = "Claimed fail on successful tool call.\n" + toolResult + "\n" + item.content
+                break;
+            }
+            toolCalled = false
+            toolResult = ""
+        } else if (item.role == "tool") {
+            if (item.content.includes("An error occurred")) {
+                continue
+            }
+            toolCalled = true
+            toolResult = item.content
         }
     }
 
