@@ -115,34 +115,43 @@ tests:
     # bigger models recognise as a placeholder (Q-30). Made-up domain, unregistered and not in the ISPDB.
     turns: 
     - how do I set up my wattlebay-plumbing.com.au email address on thunderbird?
+    - yes, it is spelled correctly
   assert:
-  - type: llm-rubric
-    value: ensure that the output points at the service provider for help and nothing else.
+  # Claude, 1 Nov 2026: two-step S4 (Dirk) - turn 1 = SPEC S4, turn 2 = SPEC S6; cases 4 and 7 share these
   - type: javascript
     value: file://grader.ts:yesNo
     config:
-      claim: The response recommends asking the service provider for help and nothing else.
+      claim: The response asks the user to check the spelling of the domain.
+    transform: context.metadata.replies[0]
+  - type: llm-rubric
+    value: The reply says the domain was not found and asks the user to check its spelling. A pointer to the email provider is allowed. Fail it if it adds anything else - a reason why the lookup failed (other than a possible typo), a list of settings to ask for, another place to look, or example providers.
+    transform: context.metadata.replies[0]
+  - type: javascript
+    value: file://grader.ts:yesNo
+    config:
+      claim: The response tells the user to get the settings from their email provider.
+  - type: llm-rubric
+    value: The reply points the user to their email provider for the settings. Fail it if it adds anything else - settings, a list of settings to ask for, a reason why the lookup failed, another place to look, or example providers.
   - type: javascript
     value: file://grader.ts:correctDomain
     config:
       domains:
       - wattlebay-plumbing.com.au
+      repeatLast: true   # SPEC S6: the same domain may be looked up again on turn 2
 
 - vars:
     turns: 
     - how do I set up my gmial.com email address on thunderbird?
-    - yes, gmail.com is correct, thanks for picking that up.
+    - sorry, it should be gmail.com
   assert:
+  # Claude, 30 Oct 2026 (Dirk: naming the likely correction is a pass; the provider pointer is not needed): SPEC S4, case 5 form
   - type: javascript
     value: file://grader.ts:yesNo
     config:
-      claim: The response asks a question and doesn't provide information.
+      claim: The response asks the user to check the spelling of the domain or suggests a corrected spelling.
     transform: context.metadata.replies[0]
   - type: llm-rubric
-    value: ensure that the model asks for clarification on the domain before proceeding to lookup gmail.com.
-    transform: context.metadata.replies[0]
-  - type: icontains
-    value: gmail.com
+    value: The reply says the domain was not found and asks the user to check its spelling or to confirm a suggested correction. A pointer to the email provider is allowed. Fail it if it adds anything else - a reason why the lookup failed (other than a possible typo), settings, or another place to look.
     transform: context.metadata.replies[0]
   - type: icontains
     value: imap.gmail.com
@@ -186,18 +195,29 @@ tests:
     # bigger models recognise as a placeholder (Q-30). Made-up domain, unregistered and not in the ISPDB.
     turns: 
     - how do I set up my sam@kestrelridge-studio.net email address on thunderbird?
+    - yes, it is spelled correctly
   assert:
-  - type: llm-rubric
-    value: ensure that the output points at the service provider for help and nothing else.
+  # Claude, 1 Nov 2026: two-step S4 (Dirk) - turn 1 = SPEC S4, turn 2 = SPEC S6; cases 4 and 7 share these
   - type: javascript
     value: file://grader.ts:yesNo
     config:
-      claim: The response recommends asking the service provider for help and nothing else.
+      claim: The response asks the user to check the spelling of the domain.
+    transform: context.metadata.replies[0]
+  - type: llm-rubric
+    value: The reply says the domain was not found and asks the user to check its spelling. A pointer to the email provider is allowed. Fail it if it adds anything else - a reason why the lookup failed (other than a possible typo), a list of settings to ask for, another place to look, or example providers.
+    transform: context.metadata.replies[0]
+  - type: javascript
+    value: file://grader.ts:yesNo
+    config:
+      claim: The response tells the user to get the settings from their email provider.
+  - type: llm-rubric
+    value: The reply points the user to their email provider for the settings. Fail it if it adds anything else - settings, a list of settings to ask for, a reason why the lookup failed, another place to look, or example providers.
   - type: javascript
     value: file://grader.ts:correctDomain
     config:
       domains:
       - kestrelridge-studio.net
+      repeatLast: true   # SPEC S6: the same domain may be looked up again on turn 2
 
 - vars:
     turns:

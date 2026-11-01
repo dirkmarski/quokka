@@ -9,10 +9,12 @@ CLI - against scripted conversations and grades each reply and each tool call.
 Eight cases, each a scripted list of user turns run on a fresh chat:
 
 - a known provider (gmail.com), asked several ways, including as an email address
-- a domain the lookup has no settings for (example.com)
+- domains the lookup has no settings for (wattlebay-plumbing.com.au,
+  kestrelridge-studio.net) - the agent should ask the user to check the
+  spelling, then, once they confirm it, point them at their email provider
 - a provider whose hostname does not follow the usual pattern (posteo.de)
-- a misspelt domain (gmial.com) - the agent should look up the domain as typed
-  and ask before correcting it
+- a misspelt domain (gmial.com) - the agent should look up the domain as typed,
+  then ask the user to check the spelling
 - no domain given at all
 
 Each case runs 10 times, because the model's behaviour varies run to run and a

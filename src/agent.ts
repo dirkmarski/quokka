@@ -177,12 +177,37 @@ function extractDomain(email: string): string {
     return email.substring(atIndex + 1);
 }
 
-async function lookupDomainConfig(domain: string) {
-    const response = await fetch("https://autoconfig.thunderbird.net/v1.1/" + domain);
-    if (!response.ok) {
-        return "An error occurred. The domain may not be in the database."
+// Written by Claude (AI), 1 Nov 2026: a domain the database doesn't hold (HTTP 404) and a
+// lookup that failed to run are told apart (Dirk, 1 Nov), so the prompt can handle each.
+// The two messages are what the model sees - the wording is Dirk's.
+export const lookupNotFoundMessage = "No settings found for this domain."
+export const lookupFailedMessage = "The lookup failed to run."
+
+// Claude, 1 Nov 2026: a lookup that fails to run is retried once in code (Dirk, 1 Nov) - the
+// model can't tell a failure from the guard's block message (v6 read), so it only ever sees
+// lookupFailedMessage after the second failure. A not-found is an answer, not retried.
+const lookupAttempts = 2
+const lookupRetryDelayMs = 500
+
+export async function lookupDomainConfig(domain: string): Promise<string> {
+    for (let attempt = 1; attempt <= lookupAttempts; attempt++) {
+        if (attempt > 1) {
+            await new Promise(resolve => setTimeout(resolve, lookupRetryDelayMs))
+        }
+        let response: Response
+        try {
+            response = await fetch("https://autoconfig.thunderbird.net/v1.1/" + domain);
+        } catch {
+            continue
+        }
+        if (response.status == 404) {
+            return lookupNotFoundMessage
+        }
+        if (response.ok) {
+            return response.text()
+        }
     }
-    return response.text()
+    return lookupFailedMessage
 }
 
 export async function createChat(): Promise<OllamaChat> {
@@ -214,12 +239,14 @@ export async function createChat(): Promise<OllamaChat> {
         "role": "system",
         "content":
         `You are an email setup agent.
-        Only provide server names, ports and security settings that came from the tool.
-        If the tool fails to run or doesn't find anything, say so. Direct the user to get the required settings from the email provider.
+        Your aim is to guide the user through a set of steps to setup their email client correctly.
+        First of all, you need to establish what email domain is being used. If the domain is not provided, ask the user for it.
+        Once the domain is available, use the tool to lookup the detailed settings.
+        Lookup the domain exactly as typed. If no settings are found for the domain, respond in 2 sentences that the domain couldn't be found and ask the user to verify the domain is spelled correctly.
+        If the lookup fails to run, say an internal error occurred (nothing else) and direct the user to get the required settings from the email provider.
+        When the lookup is successful, provide a response to the user that is short and to the point: only provide server names, ports and security settings that came from the tool.
+        When the lookup does not return any domain settings after confirming spelling with the user, direct the user to get the required settings from the email provider.
         Do not guess facts or recommendations.
-        When the lookup fails, point the user at the provider and nothing else.
-        If the domain isn't provided, ask the user to provide it before performing a lookup or making recommendations.
-        Lookup the domain exactly as typed. If the lookup fails, check if the domain looks similar to known provider and ask the user if they meant that domain instead.
         `
     })
 

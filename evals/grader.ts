@@ -146,10 +146,15 @@ export async function correctToolCallErrorMessage(output: string, context: Asser
     const grade = {pass: true, score: 1.0, reason: "No incorrect tool error reports"}
     const transcript: OllamaMessage[] = context.metadata?.['transcript']
 
+    const ran = lookupsThatRan(transcript) // Claude, 30 Oct 2026: a blocked lookup is not a successful one
+    let pending: object[] = []
     let toolCalled = false
     let toolResult = ""
     let toolCallFailedClaim = false
     for (const item of transcript) {
+        if (item.role == "assistant" && Array.isArray(item.tool_calls)) {
+            pending = [...item.tool_calls]
+        }
         if (toolCalled) {
             toolCallFailedClaim = await assertToolCallFailed(item.content)
             if (toolCallFailedClaim == true) {
@@ -161,7 +166,10 @@ export async function correctToolCallErrorMessage(output: string, context: Asser
             toolCalled = false
             toolResult = ""
         } else if (item.role == "tool") {
-            if (item.content.includes("An error occurred")) {
+            const call = pending.shift()
+            // Claude, 1 Nov 2026: a lookup succeeded only if settings came back - true of the old
+            // single error message, the new not-found and failed messages, and stored transcripts
+            if (!item.content.includes("<clientConfig") || (call !== undefined && !ran.has(call))) {
                 continue
             }
             toolCalled = true
@@ -223,17 +231,22 @@ export async function correctDomain(output: string, context: AssertionValueFunct
     const expectedDomainCount = domains.length
     const failures: string[] = []
 
+    // Claude, 1 Nov 2026: repeatLast lets extra lookups of the last expected domain through
+    // (SPEC S6 - the user confirmed the spelling, so looking it up again is allowed)
+    const repeatLast = context.config?.['repeatLast'] === true
     const ran = lookupsThatRan(transcript) // Claude, 29 Oct 2026: blocked lookups are skipped
     let index: number = 0
     for (const item of transcript) {
         if (item.role == "assistant" && Array.isArray(item.tool_calls)) {
             for (const toolCall of item.tool_calls) {
                 if ("function" in toolCall && "name" in toolCall.function && toolCall.function.name === "lookup_mail_settings" && ran.has(toolCall)) {
+                    const domain = getDomain(toolCall)
                     if (index < expectedDomainCount) {
-                        const domain = getDomain(toolCall)
                         if (domain.toLowerCase() !== domains[index].toLowerCase()) {
                             failures.push(`Found domain ${domain}, expected ${domains[index]}`)
                         }
+                    } else if (repeatLast && expectedDomainCount > 0 && domain.toLowerCase() === domains[expectedDomainCount - 1].toLowerCase()) {
+                        continue
                     }
                     index++
                 }

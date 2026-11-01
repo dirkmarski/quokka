@@ -28,17 +28,6 @@ Cases 1 (turn 1) and 6. (Q-13)
   generic settings.
 - **Shape:** one question, nothing else.
 
-## S2 - Domain looks mistyped
-
-Case 5, turn 1. (Q-16)
-
-- **Must:** look up the domain exactly as typed. If the lookup succeeds, do not
-  second-guess the user - answer as in S3. If it fails, propose the likely
-  correction and ask the user to confirm it.
-- **Must not:** run a lookup of a corrected spelling before the user confirms
-  it, or answer about a different domain without saying so.
-- **Shape:** name both spellings, then one question.
-
 ## S3 - Lookup succeeds
 
 Case 1 (turn 2), cases 2, 3 and 8.
@@ -51,20 +40,37 @@ Case 1 (turn 2), cases 2, 3 and 8.
 
 ## S4 - Lookup fails
 
-Cases 4 and 7. (Q-06, Q-10)
+Cases 4, 5 and 7, turn 1. (Q-06, Q-10, Q-16) A misspelt domain is handled
+here, not separately - S2 was merged into this situation on 30 Oct 2026.
+Two steps since 1 Nov 2026 (Dirk: *"2 steps (change in requirement)"*): the
+spelling is confirmed first, the provider pointer follows in S6.
 
-- **Must:** say the settings were not found, and direct the user to their email
-  provider.
+- **Must:** look up the domain exactly as typed; say the settings were not
+  found; ask the user to check the domain is spelled correctly. Where the domain
+  looks like a misspelling of a known provider (case 5), naming the likely
+  correction and asking the user to confirm it is enough.
+- **May:** point the user at their email provider in the same reply.
 - **Must not:** give any settings, sample guidance or other providers' settings;
-  suggest searching, or offer further guesses.
-- **Shape:** the provider pointer and nothing else, said once.
+  suggest searching; look up a domain the user has not typed.
+- **Shape:** the not-found statement and the spelling question, each said once,
+  nothing else.
 
-## S5 - The turn after the user confirms a correction
+## S5 - The turn after the user corrects the domain
 
 Case 5, turn 2.
 
-- **Must:** look up the confirmed domain and answer as in S3.
-- **Must not:** claim this or the earlier lookup failed. (Q-17)
+- **Must:** look up the corrected domain and answer as in S3.
+- **Must not:** claim this lookup failed. (Q-17)
+
+## S6 - The turn after the user confirms the spelling
+
+Cases 4 and 7, turn 2. Added 1 Nov 2026 with the two-step S4.
+
+- **Must:** direct the user to their email provider for the settings.
+- **May:** look up the same domain again.
+- **Must not:** give any settings, sample guidance or other providers' settings;
+  look up any other domain.
+- **Shape:** the provider pointer, nothing else.
 
 ## How this is graded
 

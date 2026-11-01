@@ -2,11 +2,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { AssertionValueFunctionContext } from 'promptfoo'
-import { type OllamaMessage } from '../src/agent.ts'
+import { type OllamaMessage, lookupNotFoundMessage, lookupFailedMessage } from '../src/agent.ts'
 import { correctToolCall, correctDomain, groundedSettings, correctToolCallErrorMessage } from './grader.ts'
 import { autocorrectedTypo, addressLookup, rawTextToolCall, placeholderLookup,
     settingsFromTool, inventedLink, inventedPorts, inventedInSecondReply,
-    falseFailureClaim, falseFailureAdditional, answerMentionsUnableToFind, failedLookupReported } from './grader.fixtures.ts'
+    falseFailureClaim, falseFailureAdditional, answerMentionsUnableToFind, failedLookupReported,
+    blockedLookupReported } from './grader.fixtures.ts'
 
 const knownGood: OllamaMessage[] = [
     {"role":"system","content":"You are an email setup agent.\n        Only provide server names, ports and security settings that came from the tool.\n        If the tool fails to run or doesn't find anything, say so. Direct the user to get the required settings from the email provider.\n        Do not guess facts or recommendations.\n        "},
@@ -72,10 +73,23 @@ const typoAskedBeforeCorrecting: OllamaMessage[] = [
     {"role":"assistant","content":"For gmail.com, use imap.gmail.com on port 993 and smtp.gmail.com on port 465, both with SSL."}
 ]
 
-async function gradeDomains(transcript: OllamaMessage[], domains: string[]) {
-    const context = { metadata: { transcript }, config: { domains } } as unknown as AssertionValueFunctionContext
+async function gradeDomains(transcript: OllamaMessage[], domains: string[], repeatLast = false) {
+    const context = { metadata: { transcript }, config: { domains, repeatLast } } as unknown as AssertionValueFunctionContext
     return correctDomain('', context)
 }
+
+// Claude, 1 Nov 2026: SPEC S6 - the user confirms the spelling and the agent looks the same domain up again
+const confirmedSpellingLookedUpAgain: OllamaMessage[] = [
+    knownGood[0]!,
+    {"role":"user","content":"how do I set up my wattlebay-plumbing.com.au email address on thunderbird?"},
+    {"role":"assistant","content":"","tool_calls":[{"id":"call_conf0001","function":{"name":"lookup_mail_settings","arguments":{"domain":"wattlebay-plumbing.com.au"}}}]},
+    {"role":"tool","content":"No settings found for this domain.","tool_name":"lookup_mail_settings"},
+    {"role":"assistant","content":"I couldn't find settings for wattlebay-plumbing.com.au. Please check the domain is spelled correctly."},
+    {"role":"user","content":"yes, it is spelled correctly"},
+    {"role":"assistant","content":"","tool_calls":[{"id":"call_conf0002","function":{"name":"lookup_mail_settings","arguments":{"domain":"wattlebay-plumbing.com.au"}}}]},
+    {"role":"tool","content":"No settings found for this domain.","tool_name":"lookup_mail_settings"},
+    {"role":"assistant","content":"Please get the settings from your email provider."}
+]
 
 test('Domain grader passes when the typed domain is looked up before the correction', async () => {
     const grade = await gradeDomains(typoAskedBeforeCorrecting, ['gmial.com', 'gmail.com'])
@@ -106,6 +120,23 @@ test('Domain grader fails when an expected lookup is missing', async () => {
 
 test('Domain grader fails more lookups than expected', async () => {
     const grade = await gradeDomains(typoAskedBeforeCorrecting, ['gmial.com'])
+    assert.equal(grade.pass, false)
+    assert.match(grade.reason, /Too many tool calls found/)
+})
+
+test('Domain grader with repeatLast passes a second lookup of the same domain', async () => {
+    const grade = await gradeDomains(confirmedSpellingLookedUpAgain, ['wattlebay-plumbing.com.au'], true)
+    assert.equal(grade.pass, true, grade.reason)
+})
+
+test('Domain grader without repeatLast still fails a second lookup of the same domain', async () => {
+    const grade = await gradeDomains(confirmedSpellingLookedUpAgain, ['wattlebay-plumbing.com.au'])
+    assert.equal(grade.pass, false)
+    assert.match(grade.reason, /Too many tool calls found/)
+})
+
+test('Domain grader with repeatLast still fails a lookup of a different domain', async () => {
+    const grade = await gradeDomains(typoAskedBeforeCorrecting, ['gmial.com'], true)
     assert.equal(grade.pass, false)
     assert.match(grade.reason, /Too many tool calls found/)
 })
@@ -250,6 +281,22 @@ test('Tool error grader passes a correct answer that says "if you are unable to 
 
 test('Tool error grader passes a failed lookup reported truthfully', async () => {
     const grade = await gradeErrorClaims(failedLookupReported)
+    assert.equal(grade.pass, true, grade.reason)
+})
+
+// Claude, 1 Nov 2026: the lookup now returns separate not-found and failed messages
+test('Tool error grader treats the new not-found and failed messages as failed lookups', async () => {
+    for (const message of [lookupNotFoundMessage, lookupFailedMessage]) {
+        const transcript = failedLookupReported.map(m =>
+            m.role == "tool" && m.content.includes("An error occurred") ? { ...m, content: message } : m)
+        assert.ok(transcript.some(m => m.content == message), 'fixture carries the new message')
+        const grade = await gradeErrorClaims(transcript)
+        assert.equal(grade.pass, true, grade.reason)
+    }
+})
+
+test('Tool error grader skips a blocked lookup and passes the truthful reply after it', async () => {
+    const grade = await gradeErrorClaims(blockedLookupReported)
     assert.equal(grade.pass, true, grade.reason)
 })
 
